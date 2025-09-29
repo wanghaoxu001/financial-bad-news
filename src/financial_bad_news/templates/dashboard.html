@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>金融负面新闻监控</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <style>
+      body {
+        background-color: #f3f4f6;
+        color: #111827;
+      }
+      .keyword-badge {
+        margin-right: 0.25rem;
+        margin-bottom: 0.25rem;
+      }
+      .dashboard-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+      }
+      .dashboard-card .card-header {
+        background: linear-gradient(120deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.02));
+        border-bottom: none;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        color: #1d4ed8;
+      }
+      .articles-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        padding: 1.5rem;
+        background-color: #f8fafc;
+        border-radius: 0 0 16px 16px;
+      }
+      .article-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+      }
+      .article-card h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+        color: #0f172a;
+      }
+      .article-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        font-size: 0.875rem;
+        color: #475569;
+        margin-bottom: 0.9rem;
+      }
+      .article-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .sentiment-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .sentiment-negative {
+        background-color: rgba(220, 38, 38, 0.12);
+        color: #b91c1c;
+      }
+      .sentiment-neutral {
+        background-color: rgba(234, 179, 8, 0.16);
+        color: #92400e;
+      }
+      .sentiment-positive {
+        background-color: rgba(22, 163, 74, 0.15);
+        color: #15803d;
+      }
+      .article-reason {
+        background: #f1f5f9;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        font-size: 0.92rem;
+        color: #0f172a;
+        line-height: 1.5;
+      }
+      .article-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 1.1rem;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .article-actions small {
+        color: #64748b;
+      }
+      .badge-group {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+      .empty-state {
+        padding: 3rem 1rem;
+        text-align: center;
+        color: #64748b;
+      }
+      .empty-state span {
+        display: block;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #1e293b;
+      }
+      .pagination-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      .pagination-controls .btn {
+        min-width: 100px;
+      }
+      .page-size-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .page-size-control select {
+        width: auto;
+      }
+      .filters-form .form-label {
+        font-weight: 600;
+        color: #1e293b;
+      }
+      .filters-form .form-select,
+      .filters-form .form-control {
+        border-radius: 10px;
+        border-color: #cbd5f5;
+      }
+      .filters-summary {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 0.75rem;
+      }
+      .d-none {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">金融负面新闻监控</h1>
+        <div>
+          <a class="btn btn-outline-primary" href="/rss" target="_blank">RSS 订阅</a>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">调试参数</div>
+        <div class="card-body">
+          <form id="control-form" class="row gy-2 gx-3 align-items-center">
+            <div class="col-12 col-md-3">
+              <label class="form-label">关键词</label>
+              <input
+                type="text"
+                class="form-control"
+                name="keyword"
+                value="{{ settings.fetch_keyword }}"
+              />
+            </div>
+            <div class="col-12 col-md-5">
+              <label class="form-label">负面关键词（逗号分隔）</label>
+              <input
+                type="text"
+                class="form-control"
+                name="negative_keywords"
+                value="{{ settings.negative_keywords }}"
+              />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">情感阈值</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                class="form-control"
+                name="sentiment_threshold"
+                value="{{ settings.sentiment_negative_threshold }}"
+              />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">分页大小</label>
+              <input
+                type="number"
+                min="10"
+                max="100"
+                class="form-control"
+                name="page_size"
+                value="{{ settings.page_size }}"
+              />
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2 mt-3">
+              <button type="button" id="run-button" class="btn btn-primary">运行一次</button>
+            </div>
+          </form>
+          <div class="alert alert-info mt-3 d-none" role="alert" id="result-alert"></div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header">筛选条件</div>
+        <div class="card-body filters-form">
+          <div class="row g-3">
+            <div class="col-12 col-md-4">
+              <label class="form-label" for="filter-search">标题/描述搜索</label>
+              <input
+                type="search"
+                id="filter-search"
+                class="form-control"
+                placeholder="输入关键字"
+              />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="filter-keyword">匹配关键词</label>
+              <select id="filter-keyword" class="form-select">
+                <option value="">全部</option>
+                {% for kw in keyword_options %}
+                <option value="{{ kw }}">{{ kw }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label" for="filter-local">本地情感</label>
+              <select id="filter-local" class="form-select">
+                <option value="">全部</option>
+                <option value="negative">负面</option>
+                <option value="non-negative">非负面</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label" for="filter-llm">LLM 判定</label>
+              <select id="filter-llm" class="form-select">
+                <option value="">全部</option>
+                <option value="negative">负面</option>
+                <option value="neutral">中性</option>
+                <option value="positive">正面</option>
+                <option value="error">错误/异常</option>
+                <option value="unknown">未知/未配置</option>
+              </select>
+            </div>
+          </div>
+          <div class="filters-summary">
+            <button class="btn btn-sm btn-outline-secondary" id="filter-reset" type="button">
+              重置筛选
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card dashboard-card">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span>已保存的新闻（总计 {{ total_count }} 条）</span>
+          <div class="page-size-control">
+            <label class="form-label mb-0" for="page-size-select">每页</label>
+            <select id="page-size-select" class="form-select form-select-sm">
+              {% for option in page_size_options %}
+              <option value="{{ option }}" {% if option == page_size %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        {% if articles %}
+        {% set llm_label_map = {'negative': '负面', 'neutral': '中性', 'positive': '正面'} %}
+        <div
+          class="pagination-controls"
+          id="pagination-controls"
+          data-page="{{ page }}"
+          data-total-pages="{{ total_pages }}"
+          data-page-size="{{ page_size }}"
+        >
+          <button class="btn btn-outline-secondary" id="pagination-prev" type="button">上一页</button>
+          <div>第 {{ page }} / {{ total_pages }} 页</div>
+          <button class="btn btn-outline-secondary" id="pagination-next" type="button">下一页</button>
+        </div>
+        <div class="articles-wrapper" id="articles-wrapper">
+          {% for article in articles %}
+          {% set llm_class = (article.llm_classification or '').lower() %}
+          {% set llm_class_css = 'sentiment-negative' if llm_class == 'negative' else 'sentiment-neutral' if llm_class == 'neutral' else 'sentiment-positive' %}
+          {% set llm_label_text = llm_label_map.get(llm_class, article.llm_classification) %}
+          {% set local_flag = 'negative' if article.local_is_negative else 'non-negative' if article.local_is_negative is not none else 'unknown' %}
+          <div
+            class="article-card"
+            data-title="{{ (article.title ~ ' ' ~ (article.description or '')) | e }}"
+            data-keywords="{{ article.matched_keywords or '' }}"
+            data-local="{{ local_flag }}"
+            data-llm="{{ llm_class if llm_class else 'unknown' }}"
+          >
+            <div class="article-meta">
+              <span>时间 {{ article.source_timestamp.strftime('%Y-%m-%d %H:%M') }}</span>
+              {% if article.matched_keywords %}
+              <span>
+                关键词
+                <span class="badge-group">
+                  {% for kw in article.matched_keywords.split(',') %}
+                  <span class="badge text-bg-secondary keyword-badge">{{ kw }}</span>
+                  {% endfor %}
+                </span>
+              </span>
+              {% endif %}
+              {% if article.local_sentiment_score is not none %}
+              <span>
+                本地情感
+                <span
+                  class="sentiment-pill {{ 'sentiment-negative' if article.local_is_negative else 'sentiment-neutral' }}"
+                >
+                  {{ '%.2f' | format(article.local_sentiment_score) }} · {{ '负面' if article.local_is_negative else '非负面' }}
+                </span>
+              </span>
+              {% endif %}
+              {% if article.llm_classification %}
+              <span>
+                LLM
+                <span class="sentiment-pill {{ llm_class_css }}">
+                  {{ llm_label_text }} · 置信度 {{ '%.2f' | format(article.llm_confidence or 0) }}
+                </span>
+              </span>
+              {% endif %}
+            </div>
+            <h3>{{ article.title }}</h3>
+            {% if article.description %}
+            <p class="text-muted" style="white-space: pre-line;">{{ article.description }}</p>
+            {% endif %}
+            <div class="article-reason">
+              {{ article.reason or '无过滤理由' }}
+            </div>
+            <div class="article-actions">
+              <small>抓取于 {{ article.fetched_at.strftime('%Y-%m-%d %H:%M') }}</small>
+              <a class="btn btn-sm btn-outline-primary" href="{{ article.url }}" target="_blank" rel="noopener">查看原文</a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="pagination-controls">
+          <button class="btn btn-outline-secondary" id="pagination-prev-bottom" type="button">上一页</button>
+          <div>第 {{ page }} / {{ total_pages }} 页</div>
+          <button class="btn btn-outline-secondary" id="pagination-next-bottom" type="button">下一页</button>
+        </div>
+        <div class="empty-state d-none" id="filter-empty-state">
+          <span>无匹配结果</span>
+          请调整筛选条件或重置筛选。
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <span>暂无数据</span>
+          请运行一次抓取任务或等待调度任务入库。
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <script>
+      const runButton = document.getElementById("run-button");
+      const resultAlert = document.getElementById("result-alert");
+      const form = document.getElementById("control-form");
+
+      runButton.addEventListener("click", async () => {
+        runButton.disabled = true;
+        resultAlert.classList.add("d-none");
+        const formData = new FormData(form);
+        const payload = Object.fromEntries(formData.entries());
+        try {
+          const response = await fetch("/run", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            throw new Error("请求失败");
+          }
+          const data = await response.json();
+          resultAlert.classList.remove("alert-danger");
+          resultAlert.classList.add("alert-info");
+          resultAlert.textContent = `已运行：新增 ${data.inserted} 条，更新 ${data.updated} 条，处理 ${data.processed} 条，扫描 ${data.fetched} 条。`;
+          resultAlert.classList.remove("d-none");
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 800);
+        } catch (error) {
+          resultAlert.textContent = "执行失败，请检查控制台日志";
+          resultAlert.classList.remove("d-none");
+          resultAlert.classList.replace("alert-info", "alert-danger");
+          console.error(error);
+        } finally {
+          runButton.disabled = false;
+        }
+      });
+
+      const filterSearch = document.getElementById("filter-search");
+      const filterKeyword = document.getElementById("filter-keyword");
+      const filterLocal = document.getElementById("filter-local");
+      const filterLLM = document.getElementById("filter-llm");
+      const filterReset = document.getElementById("filter-reset");
+      const articlesWrapper = document.getElementById("articles-wrapper");
+      const emptyState = document.getElementById("filter-empty-state");
+
+      const articleCards = articlesWrapper
+        ? Array.from(articlesWrapper.querySelectorAll(".article-card"))
+        : [];
+
+      function applyFilters() {
+        const searchTerm = (filterSearch?.value || "").trim().toLowerCase();
+        const keywordValue = filterKeyword?.value || "";
+        const localValue = filterLocal?.value || "";
+        const llmValue = filterLLM?.value || "";
+
+        let visibleCount = 0;
+
+        articleCards.forEach((card) => {
+          const title = (card.dataset.title || "").toLowerCase();
+          const keywords = (card.dataset.keywords || "")
+            .split(",")
+            .map((kw) => kw.trim())
+            .filter(Boolean);
+          const localFlag = card.dataset.local || "";
+          const llmFlag = card.dataset.llm || "";
+
+          let hidden = false;
+
+          if (searchTerm && !title.includes(searchTerm)) {
+            hidden = true;
+          }
+
+          if (!hidden && keywordValue) {
+            hidden = !keywords.includes(keywordValue);
+          }
+
+          if (!hidden && localValue) {
+            hidden = localFlag !== localValue;
+          }
+
+          if (!hidden && llmValue) {
+            hidden = llmFlag !== llmValue;
+          }
+
+          card.classList.toggle("d-none", hidden);
+          if (!hidden) {
+            visibleCount += 1;
+          }
+        });
+
+        if (filterCount) {
+          filterCount.textContent = `${visibleCount}`;
+        }
+        if (emptyState) {
+          emptyState.classList.toggle("d-none", visibleCount !== 0);
+        }
+      }
+
+      if (filterSearch) {
+        filterSearch.addEventListener("input", applyFilters);
+      }
+      if (filterKeyword) {
+        filterKeyword.addEventListener("change", applyFilters);
+      }
+      if (filterLocal) {
+        filterLocal.addEventListener("change", applyFilters);
+      }
+      if (filterLLM) {
+        filterLLM.addEventListener("change", applyFilters);
+      }
+      if (filterReset) {
+        filterReset.addEventListener("click", () => {
+          if (filterSearch) filterSearch.value = "";
+          if (filterKeyword) filterKeyword.value = "";
+          if (filterLocal) filterLocal.value = "";
+          if (filterLLM) filterLLM.value = "";
+          applyFilters();
+        });
+      }
+
+      applyFilters();
+
+      const paginationControls = document.getElementById("pagination-controls");
+      const paginationData = paginationControls
+        ? {
+            page: Number(paginationControls.dataset.page || "1"),
+            totalPages: Number(paginationControls.dataset.totalPages || "1"),
+            pageSize: Number(paginationControls.dataset.pageSize || "20"),
+          }
+        : null;
+      const paginationPrev = document.getElementById("pagination-prev");
+      const paginationNext = document.getElementById("pagination-next");
+      const paginationPrevBottom = document.getElementById("pagination-prev-bottom");
+      const paginationNextBottom = document.getElementById("pagination-next-bottom");
+      const pageSizeSelect = document.getElementById("page-size-select");
+
+      function navigateTo(page, pageSize) {
+        const params = new URLSearchParams(window.location.search);
+        params.set("page", String(page));
+        params.set("page_size", String(pageSize));
+        window.location.assign(`${window.location.pathname}?${params.toString()}`);
+      }
+
+      function attachPagination(button, targetPage) {
+        if (!button || !paginationData) return;
+        const disabled = targetPage < 1 || targetPage > paginationData.totalPages;
+        button.disabled = disabled;
+        if (!disabled) {
+          button.addEventListener("click", () => navigateTo(targetPage, paginationData.pageSize));
+        }
+      }
+
+      if (paginationData) {
+        attachPagination(paginationPrev, paginationData.page - 1);
+        attachPagination(paginationNext, paginationData.page + 1);
+        attachPagination(paginationPrevBottom, paginationData.page - 1);
+        attachPagination(paginationNextBottom, paginationData.page + 1);
+      }
+
+      if (pageSizeSelect && paginationData) {
+        pageSizeSelect.addEventListener("change", (event) => {
+          const newSize = Number(event.target.value || paginationData.pageSize);
+          navigateTo(1, newSize);
+        });
+      }
+    </script>
+  </body>
+</html>
