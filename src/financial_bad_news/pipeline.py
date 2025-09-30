@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from itertools import count
 from typing import Iterable, Mapping, MutableMapping
 
+import requests
+
 from .classification import LLMClassifier, LocalClassifier
 from .config import get_settings
 from .db import init_db, session_scope
@@ -34,6 +36,7 @@ def run_pipeline(
     negative_keywords: list[str] | None = None,
     sentiment_threshold: float | None = None,
     page_size: int | None = None,
+    max_pages: int | None = None,
     min_timestamp: datetime | None = None,
     ) -> PipelineStats:
     settings = get_settings()
@@ -41,6 +44,10 @@ def run_pipeline(
     client = TophubClient(
         api_key=settings.tophub_api_key,
         base_url=str(settings.tophub_base_url),
+        timeout=settings.tophub_timeout_seconds,
+        max_retries=settings.tophub_max_retries,
+        backoff_base=settings.tophub_backoff_base_seconds,
+        backoff_cap=settings.tophub_backoff_cap_seconds,
     )
     local_classifier = LocalClassifier(
         negative_threshold=(
@@ -53,6 +60,9 @@ def run_pipeline(
         base_url=str(settings.llm_base_url),
         api_key=settings.llm_api_key,
         model=settings.llm_model,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_max_retries,
+        retry_delay=settings.llm_retry_delay_seconds,
     )
 
     keywords = negative_keywords if negative_keywords is not None else settings.keywords_list()
@@ -75,19 +85,28 @@ def run_pipeline(
             effective_min_timestamp,
             last_timestamp,
         )
+        page_limit = max_pages if max_pages is not None else settings.tophub_max_pages
         for page in count(1):
+            if page_limit is not None and page > page_limit:
+                logger.info("到达配置的最大页数 %s，结束翻页", page_limit)
+                break
             logger.info("请求 TopHub 第 %s 页", page)
-            payload = client.search(
-                keyword or settings.fetch_keyword,
-                page=page,
-                size=page_size or settings.page_size,
-            )
+            try:
+                payload = client.search(
+                    keyword or settings.fetch_keyword,
+                    page=page,
+                    size=page_size or settings.page_size,
+                )
+            except requests.RequestException:
+                logger.exception("TopHub 请求失败，终止本次执行")
+                break
             items = _extract_items(payload)
             if not items:
                 logger.info("第 %s 页无数据，停止拉取", page)
                 break
             stop_paging = False
             logger.info("第 %s 页返回 %s 条", page, len(items))
+            page_dirty = False
             for item in items:
                 fetched_items += 1
                 article_time = _parse_timestamp(item.get("time"))
@@ -149,7 +168,7 @@ def run_pipeline(
                 if updated:
                     updated_count += 1
                 if inserted or updated:
-                    session.commit()
+                    page_dirty = True
                 logger.info(
                     "命中新闻：%s | 关键词=%s | 本地情感=%.2f | LLM=%s | 理由=%s | 动作=%s",
                     article.title,
@@ -159,6 +178,8 @@ def run_pipeline(
                     reason,
                     "插入" if inserted else "更新" if updated else "无变化",
                 )
+            if page_dirty:
+                session.commit()
             if stop_paging:
                 logger.info("满足停止条件，结束翻页")
                 break

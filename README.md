@@ -13,6 +13,20 @@ cp .env.example .env
 
 Edit `.env` to provide `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` plus optional overrides.
 
+TopHub specific tuning is available via:
+
+- `TOPHUB_MAX_PAGES`
+- `TOPHUB_MAX_RETRIES`
+- `TOPHUB_TIMEOUT_SECONDS`
+- `TOPHUB_BACKOFF_BASE_SECONDS`
+- `TOPHUB_BACKOFF_CAP_SECONDS`
+
+LLM 调用可通过以下环境变量调整：
+
+- `LLM_TIMEOUT_SECONDS`
+- `LLM_MAX_RETRIES`
+- `LLM_RETRY_DELAY_SECONDS`
+
 ## Usage
 
 - Single fetch: `financial-bad-news fetch`

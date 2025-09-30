@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any
 
 import httpx
 from snownlp import SnowNLP
@@ -29,11 +30,22 @@ class LocalClassifier:
 
 
 class LLMClassifier:
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        *,
+        timeout: float = 15.0,
+        max_retries: int = 2,
+        retry_delay: float = 3.0,
+    ) -> None:
         self.endpoint = base_url.rstrip("/") + "/chat/completions"
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
 
     def classify(self, text: str) -> tuple[str, float]:
         if not self.api_key:
@@ -57,22 +69,38 @@ class LLMClassifier:
                 {"role": "user", "content": text},
             ],
         }
-        try:
-            response = httpx.post(self.endpoint, headers=headers, json=payload, timeout=self.timeout)
-            response.raise_for_status()
-            data: dict[str, Any] = response.json()
-            content = self._extract_content(data)
-            parsed = self._parse_json_content(content)
-            label = str(parsed.get("label", "unknown")).lower()
-            confidence_raw = parsed.get("confidence", 0.0)
+        attempt = 0
+        while True:
             try:
-                confidence = float(confidence_raw)
-            except (TypeError, ValueError):
-                confidence = 0.0
-            return label, confidence
-        except Exception as exc:  # pragma: no cover - network or parsing failure
-            logger.warning("LLM 分类失败: %s", exc, exc_info=True)
-            return "error", 0.0
+                response = httpx.post(
+                    self.endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                data: dict[str, Any] = response.json()
+                content = self._extract_content(data)
+                parsed = self._parse_json_content(content)
+                label = str(parsed.get("label", "unknown")).lower()
+                confidence_raw = parsed.get("confidence", 0.0)
+                try:
+                    confidence = float(confidence_raw)
+                except (TypeError, ValueError):
+                    confidence = 0.0
+                return label, confidence
+            except Exception as exc:  # pragma: no cover - network or parsing failure
+                if attempt >= self.max_retries:
+                    logger.warning("LLM 分类失败: %s", exc, exc_info=True)
+                    return "error", 0.0
+                logger.warning(
+                    "LLM 请求失败（第 %s 次重试），将在 %s 秒后重试：%s",
+                    attempt + 1,
+                    self.retry_delay,
+                    exc,
+                )
+                time.sleep(self.retry_delay)
+                attempt += 1
 
     @staticmethod
     def _extract_content(data: dict[str, Any]) -> str:

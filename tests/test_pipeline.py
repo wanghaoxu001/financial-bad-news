@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+import requests
 from sqlalchemy import select
 
 from financial_bad_news.db import session_scope
@@ -136,6 +137,22 @@ def test_run_pipeline_respects_today_cutoff(monkeypatch):
         assert len(articles) == 1
         assert articles[0].url == "https://example.com/new"
         assert articles[0].reason and "关键词命中" in articles[0].reason
+
+
+def test_run_pipeline_handles_tophub_timeout(monkeypatch):
+    def raise_timeout(*_, **__):
+        raise requests.exceptions.ReadTimeout("mock timeout")
+
+    monkeypatch.setattr(
+        "financial_bad_news.pipeline.TophubClient.search",
+        raise_timeout,
+        raising=False,
+    )
+
+    stats = run_pipeline(min_timestamp=datetime(2023, 1, 1))
+
+    assert stats["inserted"] == 0
+    assert stats["processed"] == 0
 
 
 def test_delete_articles_since_removes_current_day():

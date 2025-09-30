@@ -18,11 +18,66 @@ class Settings(BaseSettings):
     tophub_base_url: AnyHttpUrl = Field(
         default="https://api.tophubdata.com", validation_alias="TOPHUB_BASE_URL"
     )
+    tophub_max_pages: int | None = Field(
+        default=None,
+        validation_alias="TOPHUB_MAX_PAGES",
+        ge=1,
+        description="Maximum number of TopHub pages to fetch per run.",
+    )
+    tophub_max_retries: int = Field(
+        default=3,
+        validation_alias="TOPHUB_MAX_RETRIES",
+        ge=0,
+        le=8,
+        description="Number of retries for TopHub requests before failing.",
+    )
+    tophub_timeout_seconds: float = Field(
+        default=20.0,
+        validation_alias="TOPHUB_TIMEOUT_SECONDS",
+        ge=1.0,
+        le=120.0,
+        description="Timeout in seconds for TopHub requests.",
+    )
+    tophub_backoff_base_seconds: float = Field(
+        default=1.0,
+        validation_alias="TOPHUB_BACKOFF_BASE_SECONDS",
+        ge=0.1,
+        le=60.0,
+        description="Base delay in seconds for exponential backoff when retrying TopHub requests.",
+    )
+    tophub_backoff_cap_seconds: float = Field(
+        default=30.0,
+        validation_alias="TOPHUB_BACKOFF_CAP_SECONDS",
+        ge=0.5,
+        le=300.0,
+        description="Maximum backoff delay in seconds between TopHub retries.",
+    )
 
     # LLM API integration
     llm_base_url: AnyHttpUrl = Field(validation_alias="LLM_BASE_URL")
     llm_api_key: str = Field(validation_alias="LLM_API_KEY")
     llm_model: str = Field(validation_alias="LLM_MODEL")
+    llm_timeout_seconds: float = Field(
+        default=15.0,
+        validation_alias="LLM_TIMEOUT_SECONDS",
+        ge=1.0,
+        le=120.0,
+        description="Timeout in seconds for LLM classification requests.",
+    )
+    llm_max_retries: int = Field(
+        default=2,
+        validation_alias="LLM_MAX_RETRIES",
+        ge=0,
+        le=5,
+        description="Number of LLM classification retries before giving up.",
+    )
+    llm_retry_delay_seconds: float = Field(
+        default=3.0,
+        validation_alias="LLM_RETRY_DELAY_SECONDS",
+        ge=0.5,
+        le=30.0,
+        description="Delay in seconds between LLM retry attempts.",
+    )
 
     # Application behaviour
     fetch_keyword: str = Field(default="银行", validation_alias="FETCH_KEYWORD")
@@ -55,4 +110,3 @@ def get_settings() -> Settings:
 
 
 __all__ = ["Settings", "get_settings"]
-
