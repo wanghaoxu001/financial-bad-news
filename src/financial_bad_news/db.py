@@ -77,6 +77,8 @@ def init_db() -> None:
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
     _ensure_reason_column(engine)
+    _ensure_content_fingerprint_column(engine)
+    _ensure_indexes(engine)
 
 
 def _ensure_reason_column(engine: Engine) -> None:
@@ -89,6 +91,32 @@ def _ensure_reason_column(engine: Engine) -> None:
         return
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE news_articles ADD COLUMN reason TEXT"))
+
+
+def _ensure_content_fingerprint_column(engine: Engine) -> None:
+    inspector = inspect(engine)
+    try:
+        columns = {column["name"] for column in inspector.get_columns("news_articles")}
+    except Exception:  # pragma: no cover - unexpected inspector failure
+        return
+    if "content_fingerprint" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE news_articles ADD COLUMN content_fingerprint VARCHAR(64)")
+        )
+
+
+def _ensure_indexes(engine: Engine) -> None:
+    statements = (
+        "CREATE INDEX IF NOT EXISTS ix_news_articles_source_timestamp\n"
+        "  ON news_articles(source_timestamp)",
+        "CREATE INDEX IF NOT EXISTS ix_news_articles_content_fingerprint\n"
+        "  ON news_articles(content_fingerprint)",
+    )
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 __all__ = [

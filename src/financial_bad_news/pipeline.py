@@ -14,7 +14,7 @@ from .config import get_settings
 from .db import init_db, session_scope
 from .filters import extract_item_text, match_keywords
 from .models import NewsArticle
-from .repository import get_latest_timestamp, upsert_article
+from .repository import backfill_missing_fingerprints, get_latest_timestamp, upsert_article
 from .tophub_client import TophubClient
 
 
@@ -73,6 +73,9 @@ def run_pipeline(
 
     with session_scope() as session:
         last_timestamp = get_latest_timestamp(session)
+        backfilled = backfill_missing_fingerprints(session)
+        if backfilled:
+            logger.info("回填缺失指纹字段：%s 条", backfilled)
         effective_min_timestamp = min_timestamp
         if effective_min_timestamp is None and last_timestamp is None:
             now = datetime.utcnow()

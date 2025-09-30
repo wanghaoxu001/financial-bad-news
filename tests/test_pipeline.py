@@ -70,6 +70,7 @@ def test_run_pipeline_inserts_articles(mock_clients):
         assert article.llm_classification == "negative"
         assert article.reason is not None
         assert "关键词命中" in article.reason
+        assert article.content_fingerprint is not None
 
 
 def test_run_pipeline_skips_existing(mock_clients):
@@ -137,6 +138,75 @@ def test_run_pipeline_respects_today_cutoff(monkeypatch):
         assert len(articles) == 1
         assert articles[0].url == "https://example.com/new"
         assert articles[0].reason and "关键词命中" in articles[0].reason
+
+
+def test_run_pipeline_deduplicates_by_content(monkeypatch):
+    payload_first = {
+        "data": {
+            "items": [
+                {
+                    "title": "银行系统漏洞导致信用卡盗刷",
+                    "description": "造成用户损失",
+                    "url": "https://example.com/a",
+                    "time": int(datetime(2024, 1, 5, 8, 0, 0).timestamp()),
+                }
+            ],
+            "totalpage": 1,
+        }
+    }
+    payload_duplicate = {
+        "data": {
+            "items": [
+                {
+                    "title": "银行系统漏洞造成信用卡损失",
+                    "description": "造成用户资产损失",
+                    "url": "https://example.com/copy",
+                    "time": int(datetime(2024, 1, 6, 8, 0, 0).timestamp()),
+                }
+            ],
+            "totalpage": 1,
+        }
+    }
+
+    monkeypatch.setattr(
+        "financial_bad_news.pipeline.TophubClient.search",
+        lambda self, keyword, page=1, size=50: payload_first,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "financial_bad_news.pipeline.LocalClassifier.classify",
+        lambda self, text: (0.2, True),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "financial_bad_news.pipeline.LLMClassifier.classify",
+        lambda self, text: ("negative", 0.9),
+        raising=False,
+    )
+
+    run_pipeline(min_timestamp=datetime(2023, 1, 1))
+
+    monkeypatch.setattr(
+        "financial_bad_news.pipeline.TophubClient.search",
+        lambda self, keyword, page=1, size=50: payload_duplicate,
+        raising=False,
+    )
+
+    stats = run_pipeline(min_timestamp=datetime(2023, 1, 1))
+
+    with session_scope() as session:
+        articles = session.execute(select(NewsArticle)).scalars().all()
+        assert len(articles) == 1
+        stored = articles[0]
+        assert stored.url == "https://example.com/a"
+        assert stored.content_fingerprint is not None
+        expected_time = datetime.fromtimestamp(
+            payload_duplicate["data"]["items"][0]["time"], tz=timezone.utc
+        ).replace(tzinfo=None)
+        assert stored.source_timestamp == expected_time
+
+    assert stats["inserted"] == 0
+    assert stats["updated"] == 1
 
 
 def test_run_pipeline_handles_tophub_timeout(monkeypatch):
